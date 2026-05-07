@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>左滑右滑</title>
+    <title>左滑滑右滑滑</title>
     <style>
         body, html {
             margin: 0; padding: 0; width: 100%; height: 100%;
@@ -11,47 +11,58 @@
             touch-action: none; 
         }
 
+        /* 我們把原本的 video 隱藏，但不能用 display: none (手機可能會停止載入) */
+        /* 所以我們把它縮小到 0 並設定透明 */
         #bg-video {
-            position: absolute; top: 0; left: 0;
-            width: 100vw; height: 100vh;
-            object-fit: fill; pointer-events: none; 
+            position: absolute; opacity: 0; 
+            width: 0; height: 0; pointer-events: none;
         }
 
-        /* 互動提示文字 */
+        /* 新增：這是我們真正要顯示的畫布 */
+        #art-canvas {
+            position: absolute; top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            pointer-events: none;
+            z-index: 0;
+        }
+
         .overlay-text {
             position: absolute; top: 50%; left: 50%;
             transform: translate(-50%, -50%);
             color: white; font-family: sans-serif;
-            font-size: 1.75rem; letter-spacing: 1px;
+            font-size: 1.5rem; letter-spacing: 2px;
             pointer-events: none; mix-blend-mode: difference; 
             text-align: center; z-index: 1;
         }
 
-        /* 新增：覆蓋全螢幕的「點擊開始」遮罩 */
         #start-screen {
             position: absolute; top: 0; left: 0;
             width: 100vw; height: 100vh;
-            background-color: rgba(0, 0, 0, 0.85); /* 半透明黑底 */
+            background-color: rgba(0, 0, 0, 0.85); 
             color: white; font-family: sans-serif;
             display: flex; justify-content: center; align-items: center;
             font-size: 1.5rem; letter-spacing: 2px;
             z-index: 10; cursor: pointer;
-            transition: opacity 0.5s ease; /* 淡出動畫 */
+            transition: opacity 0.5s ease; 
         }
     </style>
 </head>
 <body>
 
-    <div id="start-screen">👆touch2start</div>
+    <div id="start-screen">👆tap2START</div>
 
     <video id="bg-video" muted playsinline preload="auto">
         <source src="spin.mp4" type="video/mp4">
     </video>
 
-    <div class="overlay-text">👈 左滑右滑 👉</div>
+    <canvas id="art-canvas"></canvas>
+
+    <div class="overlay-text">👈左滑右滑👉</div>
 
     <script>
         const video = document.getElementById('bg-video');
+        const canvas = document.getElementById('art-canvas');
+        const ctx = canvas.getContext('2d');
         const startScreen = document.getElementById('start-screen');
         
         let lastMouseX = null;
@@ -60,66 +71,98 @@
         const FPS = 30; 
         const frameDuration = 1 / FPS; 
         
-        // 分離「目標時間」與「實際影片時間」
         let targetTime = 2; 
         let isVideoReady = false; 
 
         // ==========================================
-        // 1. 核心解鎖機制 (Click Event)
+        // 【藝術家控制台】調整這裡來改變你的 Vibe！
+        // ==========================================
+        // 0.5 代表影片會縮小一半來平鋪，數字越小，畫面上的影片網格就越密集！
+        const TILE_SCALE = 0.4; 
+
+        // 確保 Canvas 尺寸永遠貼合視窗
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas(); // 初始化執行一次
+
+        // ==========================================
+        // 核心：將影片畫到 Canvas 上的函數
+        // ==========================================
+        function drawVideoMatrix() {
+            if (video.videoWidth === 0) return; // 影片還沒載入尺寸時不畫
+
+            // 計算縮放後的影片寬高 (保持原始比例)
+            const scaledWidth = video.videoWidth * TILE_SCALE;
+            const scaledHeight = video.videoHeight * TILE_SCALE;
+
+            // 計算需要幾欄幾列才能填滿整個螢幕
+            const cols = Math.ceil(canvas.width / scaledWidth);
+            const rows = Math.ceil(canvas.height / scaledHeight);
+
+            // 清空上一幀的畫布
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 用雙迴圈瘋狂蓋印章
+            for (let i = 0; i < cols; i++) {
+                for (let j = 0; j < rows; j++) {
+                    ctx.drawImage(
+                        video, 
+                        i * scaledWidth, 
+                        j * scaledHeight, 
+                        scaledWidth, 
+                        scaledHeight
+                    );
+                }
+            }
+        }
+
+        // ==========================================
+        // 點擊解鎖機制
         // ==========================================
         startScreen.addEventListener('click', () => {
-            // 嘗試播放以解鎖
             video.play().then(() => {
                 video.pause();
                 video.currentTime = targetTime;
                 isVideoReady = true;
                 
-                // 畫面淡出並移除
                 startScreen.style.opacity = '0';
                 setTimeout(() => { startScreen.style.display = 'none'; }, 500);
                 
-                // 啟動效能友善的渲染迴圈
                 requestAnimationFrame(renderLoop);
             }).catch(err => {
-                console.error("解鎖失敗，可能瀏覽器阻擋：", err);
                 startScreen.innerText = "請確認瀏覽器允許播放影片";
             });
         });
 
-
         // ==========================================
-        // 2. 渲染迴圈 (保護手機效能的關鍵)
+        // 渲染迴圈
         // ==========================================
         function renderLoop() {
             if (isVideoReady && !Number.isNaN(video.duration)) {
-                // 只有當「目標時間」與「目前影片時間」差距超過 0.01 秒時，才去更新影片
-                // 這樣能避免微小的誤差不斷干擾手機解碼器
+                // 更新隱藏影片的時間
                 if (Math.abs(video.currentTime - targetTime) > 0.01) {
                     video.currentTime = targetTime;
                 }
+                
+                // 把影片蓋到畫布上
+                drawVideoMatrix();
             }
-            // 不斷循環此函數
             requestAnimationFrame(renderLoop);
         }
 
-
-        // 統一更新目標時間的函數
         function updateTargetTime(framesToMove) {
             if (!isVideoReady || Number.isNaN(video.duration)) return;
-            
             const timeToMove = framesToMove * frameDuration;
             targetTime = targetTime + timeToMove;
-            
-            // 限制在影片長度範圍內
             targetTime = Math.max(0, Math.min(targetTime, video.duration));
         }
 
-
         // ==========================================
-        // 3. 事件監聽 (只負責計算目標時間，不直接碰影片)
+        // 事件監聽 (滑鼠與觸控)
         // ==========================================
-        
-        // 桌機版
         window.addEventListener('mousemove', (e) => {
             if (lastMouseX === null) { lastMouseX = e.clientX; return; }
             const deltaX = e.clientX - lastMouseX;
@@ -129,7 +172,6 @@
 
         window.addEventListener('mouseenter', (e) => { lastMouseX = e.clientX; });
 
-        // 手機版
         window.addEventListener('touchstart', (e) => {
             if (e.touches.length > 0) { lastTouchX = e.touches[0].clientX; }
         }, { passive: false });
@@ -141,7 +183,6 @@
                 if (lastTouchX === null) { lastTouchX = currentTouchX; return; }
                 const deltaX = currentTouchX - lastTouchX;
                 lastTouchX = currentTouchX;
-                
                 updateTargetTime(deltaX / 5);
             }
         }, { passive: false });
