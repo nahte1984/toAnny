@@ -2,16 +2,19 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vibe Coding - 滑鼠控制影片</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Vibe Coding - 跨裝置互動控制</title>
     <style>
         body, html {
             margin: 0;
             padding: 0;
             width: 100%;
             height: 100%;
-            overflow: hidden; /* 隱藏滾動條 */
-            background-color: #000; /* 背景設為黑色 */
+            overflow: hidden; 
+            background-color: #000; 
+            
+            /* 【關鍵修復】防止手機滑動時觸發瀏覽器的返回上一頁、下拉更新或滾動 */
+            touch-action: none; 
         }
 
         #bg-video {
@@ -20,9 +23,8 @@
             left: 0;
             width: 100vw;
             height: 100vh;
-            /* object-fit: fill 會強制擠壓/拉伸影片來填滿整個螢幕，無視原始比例 */
             object-fit: fill; 
-            pointer-events: none; /* 確保滑鼠事件能穿透影片被 window 捕捉 */
+            pointer-events: none; 
         }
 
         .overlay-text {
@@ -35,7 +37,8 @@
             font-size: 1.5rem;
             letter-spacing: 2px;
             pointer-events: none;
-            mix-blend-mode: difference; /* 讓文字在影片上更具藝術感 */
+            mix-blend-mode: difference; 
+            text-align: center;
         }
     </style>
 </head>
@@ -45,14 +48,17 @@
         <source src="spin.mp4" type="video/mp4">
     </video>
 
-    <div class="overlay-text">左右滑動滑鼠</div>
+    <div class="overlay-text">
+        <span id="instruction">左右滑動</span>
+    </div>
 
     <script>
         const video = document.getElementById('bg-video');
-        let lastX = null;
         
-        // 假設影片的幀率為 30 FPS (1 幀約等於 0.0333 秒)
-        // 這是網頁影片最常見的標準。如果你的影片是 60 FPS，這裡可以改成 60。
+        // 分別記錄滑鼠與觸控的最後 X 座標
+        let lastMouseX = null;
+        let lastTouchX = null;
+        
         const FPS = 30; 
         const frameDuration = 1 / FPS; 
 
@@ -61,33 +67,73 @@
             video.pause();
         });
 
-        window.addEventListener('mousemove', (e) => {
-            // 如果影片還沒抓到長度，先不執行
+        // 建立一個共用的函數來更新影片時間
+        // 傳入需要移動的「幀數」
+        function updateVideoTime(framesToMove) {
             if (Number.isNaN(video.duration)) return;
+            
+            const timeToMove = framesToMove * frameDuration;
+            let newTime = video.currentTime + timeToMove;
+            
+            // 確保時間不會超出影片範圍
+            newTime = Math.max(0, Math.min(newTime, video.duration));
+            video.currentTime = newTime;
+        }
 
-            // 記錄初始滑鼠位置
-            if (lastX === null) {
-                lastX = e.clientX;
+        // ==========================================
+        // 桌機版邏輯：滑鼠移動 (10px = 1 Frame)
+        // ==========================================
+        window.addEventListener('mousemove', (e) => {
+            if (lastMouseX === null) {
+                lastMouseX = e.clientX;
                 return;
             }
 
-            // 計算滑鼠在 X 軸的移動量
-            const deltaX = e.clientX - lastX;
-            lastX = e.clientX; // 更新滑鼠位置
+            const deltaX = e.clientX - lastMouseX;
+            lastMouseX = e.clientX;
 
-            // 邏輯：10 pixel = 1 frame
             const framesToMove = deltaX / 10;
-            const timeToMove = framesToMove * frameDuration;
-
-            // 計算新的播放時間
-            let newTime = video.currentTime + timeToMove;
-
-            // 確保時間不會小於 0 或大於影片總長度
-            newTime = Math.max(0, Math.min(newTime, video.duration));
-
-            // 更新影片畫面
-            video.currentTime = newTime;
+            updateVideoTime(framesToMove);
         });
+
+        // 滑鼠離開視窗再回來時，重置座標避免影片暴衝
+        window.addEventListener('mouseenter', (e) => {
+            lastMouseX = e.clientX;
+        });
+
+
+        // ==========================================
+        // 手機版邏輯：觸控滑動 (5px = 1 Frame)
+        // ==========================================
+        
+        // 當手指碰到螢幕的瞬間，記錄起始點
+        window.addEventListener('touchstart', (e) => {
+            if (e.touches.length > 0) {
+                lastTouchX = e.touches[0].clientX;
+            }
+        }, { passive: false });
+
+        // 當手指在螢幕上滑動時
+        window.addEventListener('touchmove', (e) => {
+            // 阻擋預設的滑動行為（避免畫面被拉扯）
+            e.preventDefault(); 
+
+            if (e.touches.length > 0) {
+                const currentTouchX = e.touches[0].clientX;
+                
+                if (lastTouchX === null) {
+                    lastTouchX = currentTouchX;
+                    return;
+                }
+
+                const deltaX = currentTouchX - lastTouchX;
+                lastTouchX = currentTouchX;
+
+                // 手機靈敏度加倍：5px = 1 Frame
+                const framesToMove = deltaX / 5; 
+                updateVideoTime(framesToMove);
+            }
+        }, { passive: false });
     </script>
 </body>
 </html>
