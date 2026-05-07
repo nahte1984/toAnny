@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Vibe Coding - TEST</title>
+    <title>test</title>
     <style>
         body, html {
             margin: 0;
@@ -47,7 +47,7 @@
     </video>
 
     <div class="overlay-text">
-        <span id="instruction">左滑 / 右滑</span>
+        <span id="instruction">👈 👉</span>
     </div>
 
     <script>
@@ -55,26 +55,32 @@
         
         let lastMouseX = null;
         let lastTouchX = null;
-        let videoUnlocked = false; // 新增：用來記錄影片是否已經在手機上解鎖
+        let videoUnlocked = false; 
         
         const FPS = 30; 
         const frameDuration = 1 / FPS; 
+        
+        // 【核心修正】建立一個獨立變數來追蹤時間，避免瀏覽器吃掉小數點
+        let virtualTime = 2; 
 
-        // 當影片基礎資料載入完成時
         video.addEventListener('loadedmetadata', () => {
             video.pause();
-            // 直接跳過黑畫面的片頭，從第 2 秒開始（你可以根據實際情況調整這個數字）
-            video.currentTime = 2; 
+            video.currentTime = virtualTime; // 初始設定為 2 秒
         });
 
         function updateVideoTime(framesToMove) {
             if (Number.isNaN(video.duration)) return;
             
             const timeToMove = framesToMove * frameDuration;
-            let newTime = video.currentTime + timeToMove;
             
-            newTime = Math.max(0, Math.min(newTime, video.duration));
-            video.currentTime = newTime;
+            // 使用 virtualTime 累加，不再依賴讀取 video.currentTime
+            virtualTime = virtualTime + timeToMove;
+            
+            // 確保時間不會超出範圍
+            virtualTime = Math.max(0, Math.min(virtualTime, video.duration));
+            
+            // 將算好的精確時間賦值給影片
+            video.currentTime = virtualTime;
         }
 
         // ==========================================
@@ -97,19 +103,15 @@
             lastMouseX = e.clientX;
         });
 
-
         // ==========================================
-        // 手機版邏輯 (加入解鎖機制)
+        // 手機版邏輯
         // ==========================================
         window.addEventListener('touchstart', (e) => {
-            // 【核心修復】當手指第一次碰到螢幕時，解鎖影片控制權
             if (!videoUnlocked) {
                 video.play().then(() => {
                     video.pause();
                     videoUnlocked = true;
-                }).catch(err => {
-                    console.log("影片解鎖失敗：", err);
-                });
+                }).catch(err => console.log("影片解鎖失敗：", err));
             }
 
             if (e.touches.length > 0) {
