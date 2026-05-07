@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vibe Coding - 滑鼠控制影片</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden; /* 隱藏滾動條 */
+            background-color: #000; /* 背景設為黑色 */
+        }
+
+        #bg-video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            /* object-fit: fill 會強制擠壓/拉伸影片來填滿整個螢幕，無視原始比例 */
+            object-fit: fill; 
+            pointer-events: none; /* 確保滑鼠事件能穿透影片被 window 捕捉 */
+        }
+
+        .overlay-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-family: sans-serif;
+            font-size: 1.5rem;
+            letter-spacing: 2px;
+            pointer-events: none;
+            mix-blend-mode: difference; /* 讓文字在影片上更具藝術感 */
+        }
+    </style>
+</head>
+<body>
+
+    <video id="bg-video" muted playsinline>
+        <source src="spin.mp4" type="video/mp4">
+    </video>
+
+    <div class="overlay-text">左右滑動滑鼠</div>
+
+    <script>
+        const video = document.getElementById('bg-video');
+        let lastX = null;
+        
+        // 假設影片的幀率為 30 FPS (1 幀約等於 0.0333 秒)
+        // 這是網頁影片最常見的標準。如果你的影片是 60 FPS，這裡可以改成 60。
+        const FPS = 30; 
+        const frameDuration = 1 / FPS; 
+
+        // 確保影片加載完成且暫停在第一幀
+        video.addEventListener('loadedmetadata', () => {
+            video.pause();
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            // 如果影片還沒抓到長度，先不執行
+            if (Number.isNaN(video.duration)) return;
+
+            // 記錄初始滑鼠位置
+            if (lastX === null) {
+                lastX = e.clientX;
+                return;
+            }
+
+            // 計算滑鼠在 X 軸的移動量
+            const deltaX = e.clientX - lastX;
+            lastX = e.clientX; // 更新滑鼠位置
+
+            // 邏輯：10 pixel = 1 frame
+            const framesToMove = deltaX / 10;
+            const timeToMove = framesToMove * frameDuration;
+
+            // 計算新的播放時間
+            let newTime = video.currentTime + timeToMove;
+
+            // 確保時間不會小於 0 或大於影片總長度
+            newTime = Math.max(0, Math.min(newTime, video.duration));
+
+            // 更新影片畫面
+            video.currentTime = newTime;
+        });
+    </script>
+</body>
+</html>
