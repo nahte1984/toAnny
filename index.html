@@ -3,138 +3,146 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>test</title>
+    <title>極致流暢版</title>
     <style>
         body, html {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            overflow: hidden; 
-            background-color: #000; 
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            overflow: hidden; background-color: #000; 
             touch-action: none; 
         }
 
         #bg-video {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            object-fit: fill; 
-            pointer-events: none; 
+            position: absolute; top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            object-fit: fill; pointer-events: none; 
         }
 
+        /* 互動提示文字 */
         .overlay-text {
-            position: absolute;
-            top: 50%;
-            left: 50%;
+            position: absolute; top: 50%; left: 50%;
             transform: translate(-50%, -50%);
-            color: white;
-            font-family: sans-serif;
-            font-size: 1.5rem;
-            letter-spacing: 2px;
-            pointer-events: none;
-            mix-blend-mode: difference; 
-            text-align: center;
+            color: white; font-family: sans-serif;
+            font-size: 1.5rem; letter-spacing: 2px;
+            pointer-events: none; mix-blend-mode: difference; 
+            text-align: center; z-index: 1;
+        }
+
+        /* 新增：覆蓋全螢幕的「點擊開始」遮罩 */
+        #start-screen {
+            position: absolute; top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            background-color: rgba(0, 0, 0, 0.85); /* 半透明黑底 */
+            color: white; font-family: sans-serif;
+            display: flex; justify-content: center; align-items: center;
+            font-size: 1.5rem; letter-spacing: 2px;
+            z-index: 10; cursor: pointer;
+            transition: opacity 0.5s ease; /* 淡出動畫 */
         }
     </style>
 </head>
 <body>
 
+    <div id="start-screen">👆touch2start</div>
+
     <video id="bg-video" muted playsinline preload="auto">
         <source src="spin.mp4" type="video/mp4">
     </video>
 
-    <div class="overlay-text">
-        <span id="instruction">👈 👉</span>
-    </div>
+    <div class="overlay-text">👈 👉</div>
 
     <script>
         const video = document.getElementById('bg-video');
+        const startScreen = document.getElementById('start-screen');
         
         let lastMouseX = null;
         let lastTouchX = null;
-        let videoUnlocked = false; 
         
         const FPS = 30; 
         const frameDuration = 1 / FPS; 
         
-        // 【核心修正】建立一個獨立變數來追蹤時間，避免瀏覽器吃掉小數點
-        let virtualTime = 2; 
+        // 分離「目標時間」與「實際影片時間」
+        let targetTime = 2; 
+        let isVideoReady = false; 
 
-        video.addEventListener('loadedmetadata', () => {
-            video.pause();
-            video.currentTime = virtualTime; // 初始設定為 2 秒
+        // ==========================================
+        // 1. 核心解鎖機制 (Click Event)
+        // ==========================================
+        startScreen.addEventListener('click', () => {
+            // 嘗試播放以解鎖
+            video.play().then(() => {
+                video.pause();
+                video.currentTime = targetTime;
+                isVideoReady = true;
+                
+                // 畫面淡出並移除
+                startScreen.style.opacity = '0';
+                setTimeout(() => { startScreen.style.display = 'none'; }, 500);
+                
+                // 啟動效能友善的渲染迴圈
+                requestAnimationFrame(renderLoop);
+            }).catch(err => {
+                console.error("解鎖失敗，可能瀏覽器阻擋：", err);
+                startScreen.innerText = "請確認瀏覽器允許播放影片";
+            });
         });
 
-        function updateVideoTime(framesToMove) {
-            if (Number.isNaN(video.duration)) return;
-            
-            const timeToMove = framesToMove * frameDuration;
-            
-            // 使用 virtualTime 累加，不再依賴讀取 video.currentTime
-            virtualTime = virtualTime + timeToMove;
-            
-            // 確保時間不會超出範圍
-            virtualTime = Math.max(0, Math.min(virtualTime, video.duration));
-            
-            // 將算好的精確時間賦值給影片
-            video.currentTime = virtualTime;
+
+        // ==========================================
+        // 2. 渲染迴圈 (保護手機效能的關鍵)
+        // ==========================================
+        function renderLoop() {
+            if (isVideoReady && !Number.isNaN(video.duration)) {
+                // 只有當「目標時間」與「目前影片時間」差距超過 0.01 秒時，才去更新影片
+                // 這樣能避免微小的誤差不斷干擾手機解碼器
+                if (Math.abs(video.currentTime - targetTime) > 0.01) {
+                    video.currentTime = targetTime;
+                }
+            }
+            // 不斷循環此函數
+            requestAnimationFrame(renderLoop);
         }
 
-        // ==========================================
-        // 桌機版邏輯
-        // ==========================================
-        window.addEventListener('mousemove', (e) => {
-            if (lastMouseX === null) {
-                lastMouseX = e.clientX;
-                return;
-            }
 
+        // 統一更新目標時間的函數
+        function updateTargetTime(framesToMove) {
+            if (!isVideoReady || Number.isNaN(video.duration)) return;
+            
+            const timeToMove = framesToMove * frameDuration;
+            targetTime = targetTime + timeToMove;
+            
+            // 限制在影片長度範圍內
+            targetTime = Math.max(0, Math.min(targetTime, video.duration));
+        }
+
+
+        // ==========================================
+        // 3. 事件監聽 (只負責計算目標時間，不直接碰影片)
+        // ==========================================
+        
+        // 桌機版
+        window.addEventListener('mousemove', (e) => {
+            if (lastMouseX === null) { lastMouseX = e.clientX; return; }
             const deltaX = e.clientX - lastMouseX;
             lastMouseX = e.clientX;
-
-            const framesToMove = deltaX / 10;
-            updateVideoTime(framesToMove);
+            updateTargetTime(deltaX / 10);
         });
 
-        window.addEventListener('mouseenter', (e) => {
-            lastMouseX = e.clientX;
-        });
+        window.addEventListener('mouseenter', (e) => { lastMouseX = e.clientX; });
 
-        // ==========================================
-        // 手機版邏輯
-        // ==========================================
+        // 手機版
         window.addEventListener('touchstart', (e) => {
-            if (!videoUnlocked) {
-                video.play().then(() => {
-                    video.pause();
-                    videoUnlocked = true;
-                }).catch(err => console.log("影片解鎖失敗：", err));
-            }
-
-            if (e.touches.length > 0) {
-                lastTouchX = e.touches[0].clientX;
-            }
+            if (e.touches.length > 0) { lastTouchX = e.touches[0].clientX; }
         }, { passive: false });
 
         window.addEventListener('touchmove', (e) => {
             e.preventDefault(); 
-
             if (e.touches.length > 0) {
                 const currentTouchX = e.touches[0].clientX;
-                
-                if (lastTouchX === null) {
-                    lastTouchX = currentTouchX;
-                    return;
-                }
-
+                if (lastTouchX === null) { lastTouchX = currentTouchX; return; }
                 const deltaX = currentTouchX - lastTouchX;
                 lastTouchX = currentTouchX;
-
-                const framesToMove = deltaX / 5; 
-                updateVideoTime(framesToMove);
+                
+                updateTargetTime(deltaX / 5);
             }
         }, { passive: false });
     </script>
